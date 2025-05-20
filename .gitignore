@@ -12,3 +12,4 @@ pkg
 *.sw?
 vendor/bundle
 test/gemfiles/*.lock
+.bundle
