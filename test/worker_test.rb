@@ -418,6 +418,60 @@ describe "Resque::Worker" do
     assert_equal %w( jobs high critical blahblah ).sort, processed_queues
   end
 
+  it "processes named queues before wildcard-expanded queues" do
+    Resque::Job.create(:alpha, GoodJob)
+    Resque::Job.create(:bravo, GoodJob)
+    Resque::Job.create(:charlie, GoodJob)
+    Resque::Job.create(:delta, GoodJob)
+
+    processed_queues = []
+    @worker = Resque::Worker.new(:charlie, :bravo, "*")
+    without_forking do
+      @worker.work(0) do |job|
+        processed_queues << job.queue
+      end
+    end
+
+    assert_equal "charlie", processed_queues[0]
+    assert_equal "bravo",   processed_queues[1]
+    assert_equal %w(alpha delta jobs), processed_queues[2..]
+  end
+
+  it "wildcard expands remaining queues alphabetically after named queues" do
+    Resque::Job.create(:alpha, GoodJob)
+    Resque::Job.create(:bravo, GoodJob)
+    Resque::Job.create(:charlie, GoodJob)
+    Resque::Job.create(:delta, GoodJob)
+
+    processed_queues = []
+    @worker = Resque::Worker.new(:charlie, :bravo, "*")
+    without_forking do
+      @worker.work(0) do |job|
+        processed_queues << job.queue
+      end
+    end
+
+    assert_equal processed_queues[2..].sort, processed_queues[2..]
+  end
+
+  it "named queues listed after a wildcard are not re-prioritized" do
+    Resque::Job.create(:alpha, GoodJob)
+    Resque::Job.create(:bravo, GoodJob)
+    Resque::Job.create(:charlie, GoodJob)
+
+    processed_queues = []
+    @worker = Resque::Worker.new(:charlie, "*", :alpha)
+    without_forking do
+      @worker.work(0) do |job|
+        processed_queues << job.queue
+      end
+    end
+
+    assert_equal "charlie", processed_queues[0]
+    assert_equal %w(alpha bravo jobs), processed_queues[1..]
+    assert_equal processed_queues.length, processed_queues.uniq.length
+  end
+
   it "works with globs" do
     Resque::Job.create(:critical, GoodJob)
     Resque::Job.create(:test_one, GoodJob)
