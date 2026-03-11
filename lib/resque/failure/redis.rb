@@ -75,6 +75,18 @@ module Resque
         data_store.clear_failed_queue
       end
 
+      def self.clear_retried(queue = nil)
+        job_count = count
+        i = count
+        while i >= 0
+          item = all(i)
+          unless item.nil? or item['retried_at'].nil?
+            data_store.remove_from_failed_queue(i, queue)
+          end
+          i -= 1
+        end
+      end
+
       def self.requeue(id, queue = nil)
         check_queue(queue)
         item = all(id)
