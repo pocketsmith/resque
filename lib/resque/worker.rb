@@ -280,6 +280,7 @@ module Resque
 
     # Reports the exception and marks the job as failed
     def report_failed_job(job,exception)
+      queue_name = job['queue'] if job
       log_with_severity :error, "#{job.inspect} failed: #{exception.inspect}"
       begin
         job.fail(exception)
@@ -287,7 +288,7 @@ module Resque
         log_with_severity :error, "Received exception when reporting failure: #{exception.inspect}"
       end
       begin
-        failed!
+        failed!(queue_name: queue_name)
       rescue Object => exception
         log_with_severity :error, "Received exception when increasing failed jobs counter (redis issue) : #{exception.inspect}"
       end
@@ -700,8 +701,9 @@ module Resque
     # Called when we are done working - clears our `working_on` state
     # and tells Redis we processed a job.
     def done_working
+      queue_name = job['queue'] if job
       data_store.worker_done_working(self) do
-        processed!
+        processed!(queue_name: queue_name)
       end
     end
 
@@ -711,8 +713,14 @@ module Resque
     end
 
     # Tell Redis we've processed a job.
-    def processed!
+    def processed!(queue_name: nil)
+      queue_name = @queues.join(",") unless queue_name
       Stat << "processed"
+
+      Stat << "processed:#{hostname}"
+      Stat << "processed:#{hostname}:#{queue_name}"
+      Stat << "processed:#{queue_name}"
+
       Stat << "processed:#{self}"
     end
 
@@ -722,8 +730,12 @@ module Resque
     end
 
     # Tells Redis we've failed a job.
-    def failed!
+    def failed!(queue_name: nil)
+      queue_name = @queues.join(",") unless queue_name
       Stat << "failed"
+      Stat << "failed:#{hostname}"
+      Stat << "failed:#{hostname}:#{queue_name}"
+      Stat << "failed:#{queue_name}"
       Stat << "failed:#{self}"
     end
 
