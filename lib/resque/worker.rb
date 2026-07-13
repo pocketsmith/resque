@@ -280,7 +280,7 @@ module Resque
 
     # Reports the exception and marks the job as failed
     def report_failed_job(job,exception)
-      queue_name = job['queue'] if job
+      queue_name = job.queue if job
       log_with_severity :error, "#{job.inspect} failed: #{exception.inspect}"
       begin
         job.fail(exception)
