@@ -2,6 +2,11 @@ source "https://rubygems.org"
 
 gemspec
 
+# production parity (pocketsmith Gemfile.lock): redis 5.x breaks resque 1.27's
+# client construction, and tests should exercise what production runs anyway.
+gem 'redis', '~> 4.2.0'
+gem 'redis-namespace', '~> 1.11.0'
+
 gem "activesupport", "~> 3.0"
 gem "i18n"
 

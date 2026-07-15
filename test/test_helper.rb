@@ -1,11 +1,15 @@
-require 'coveralls'
-Coveralls.wear!
+# Coveralls only in CI: locally, .simplecov has already started SimpleCov by
+# the time wear! calls start again ('coverage measurement is already setup').
+if ENV['CI']
+  require 'coveralls'
+  Coveralls.wear!
+end
 
 require 'rubygems'
 require 'bundler/setup'
 require 'minitest/autorun'
 require 'redis/namespace'
-require 'mocha/setup'
+require 'mocha/minitest'
 
 $dir = File.dirname(File.expand_path(__FILE__))
 $LOAD_PATH.unshift $dir + '/../lib'
