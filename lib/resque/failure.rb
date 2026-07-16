@@ -90,6 +90,11 @@ module Resque
       backend.clear(queue)
     end
 
+    # Clear retried failure jobs
+    def self.clear_retried(queue = nil)
+      backend.clear_retried(queue)
+    end
+
     def self.requeue(id, queue = nil)
       backend.requeue(id, queue)
     end
