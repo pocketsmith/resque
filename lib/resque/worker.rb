@@ -307,8 +307,10 @@ module Resque
       rescue Object => e
         report_failed_job(job,e)
       else
-        # Job#perform returns false only when a before_perform hook vetoed
-        # execution by raising Resque::Job::DontPerform.
+        # Job#perform returns false only when the job was never performed:
+        # a before_perform hook raised Resque::Job::DontPerform, or an
+        # around_perform hook returned without calling the block. Both are
+        # a plugin vetoing the work.
         if job_was_performed == false
           vetoed!(queue_name: job.queue)
           log_with_severity :info, "vetoed: #{job.inspect}"
