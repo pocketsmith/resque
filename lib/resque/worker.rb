@@ -302,6 +302,7 @@ module Resque
           reconnect
           run_hook :after_fork, job
         end
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         job_was_performed = job.perform
       rescue Object => e
         report_failed_job(job,e)
@@ -312,6 +313,10 @@ module Resque
           vetoed!(queue_name: job.queue)
           log_with_severity :info, "vetoed: #{job.inspect}"
         else
+          elapsed_ms = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000
+          duration!(queue_name: job.queue,
+                    job_class: job.payload_class_name,
+                    elapsed_ms: elapsed_ms)
           log_with_severity :info, "done: #{job.inspect}"
         end
       ensure
@@ -672,7 +677,9 @@ module Resque
         # it's not the precise instance that died.
         job.worker = self
         begin
-          job.fail(exception || DirtyExit.new("Job still being processed"))
+          failure = exception || DirtyExit.new("Job still being processed")
+          dirty_exit!(queue_name: job.queue) if failure.is_a?(DirtyExit)
+          job.fail(failure)
         rescue RuntimeError => e
           log_with_severity :error, e.message
         end
@@ -735,6 +742,44 @@ module Resque
     # How many failed jobs has this worker seen? Returns an int.
     def failed
       Stat["failed:#{self}"]
+    end
+
+    # Duration histogram bucket ceilings, in milliseconds. Chosen around
+    # the questions that matter for shutdown-grace and scaling arithmetic:
+    # "is this queue sub-second, seconds, minutes, or tens-of-minutes?"
+    DURATION_BUCKETS = [
+      [1_000,   "lt1s"],
+      [10_000,  "lt10s"],
+      [60_000,  "lt60s"],
+      [600_000, "lt600s"],
+    ].freeze
+
+    # Accumulates the runtime of successfully performed jobs: a sum and a
+    # count per queue and per job class (rate(sum)/rate(count) gives average
+    # duration), plus coarse per-queue buckets for distribution shape.
+    # Vetoed and failed jobs are excluded so the counts divide cleanly.
+    def duration!(queue_name:, job_class:, elapsed_ms:)
+      elapsed_ms = elapsed_ms.round
+
+      Stat.incr("duration_ms:#{queue_name}", elapsed_ms)
+      Stat.incr("duration_ms:#{queue_name}:#{job_class}", elapsed_ms)
+      Stat << "duration_count:#{queue_name}"
+      Stat << "duration_count:#{queue_name}:#{job_class}"
+
+      bucket = DURATION_BUCKETS.find { |ceiling, _| elapsed_ms < ceiling }
+      Stat << "duration_bucket:#{queue_name}:#{bucket ? bucket[1] : 'ge600s'}"
+    end
+
+    # Tells Redis a job was lost to a dirty exit — the worker or its child
+    # died mid-job (signal, OOM kill, pruned dead worker) rather than the
+    # job raising. Splits "infrastructure killed it" from code failures,
+    # which otherwise both land in `failed`. No host variant: the pruned-
+    # dead-worker path is recorded by whichever worker noticed, so host
+    # attribution would lie.
+    def dirty_exit!(queue_name: nil)
+      queue_name = @queues.join(",") unless queue_name
+      Stat << "dirty_exits"
+      Stat << "dirty_exits:#{queue_name}"
     end
 
     # How many jobs has this worker had vetoed? Returns an int.
@@ -947,7 +992,10 @@ module Resque
         nil
       end
 
-      job.fail(DirtyExit.new("Child process received unhandled signal #{$?.stopsig}", $?)) if $?.signaled?
+      if $?.signaled?
+        dirty_exit!(queue_name: job.queue)
+        job.fail(DirtyExit.new("Child process received unhandled signal #{$?.stopsig}", $?))
+      end
       @child = nil
     end
 

@@ -250,7 +250,8 @@ describe "Resque" do
       # ignore the heartbeat key that gets set in a background thread
       keys = Resque.keys - ['workers:heartbeat']
 
-      assert_equal ["queue:people", "queues"].sort, keys.sort
+      expected = ["queue:people", "queues", "stat:enqueued", "stat:enqueued:people"]
+      assert_equal expected.sort, keys.sort
     end
 
     it "keeps stats" do
@@ -291,6 +292,16 @@ describe "Resque" do
   end
 
   describe "stats" do
+    it "counts enqueued jobs per queue" do
+      Resque.enqueue_to(:queue1, SomeJob)
+      Resque.enqueue_to(:queue1, SomeJob)
+      Resque.enqueue_to(:queue2, SomeJob)
+
+      assert_equal 3, Resque::Stat["enqueued"]
+      assert_equal 2, Resque::Stat["enqueued:queue1"]
+      assert_equal 1, Resque::Stat["enqueued:queue2"]
+    end
+
     it "queue_sizes with one queue" do
       Resque.enqueue_to(:queue1, SomeJob)
 

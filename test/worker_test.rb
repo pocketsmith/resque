@@ -167,6 +167,21 @@ describe "Resque::Worker" do
     assert_equal('StandardError', Resque::Failure.all['exception'])
   end
 
+  it "counts dirty exits per queue" do
+    job = Resque::Job.new(:jobs, {'class' => 'GoodJob', 'args' => "blah"})
+    @worker.working_on(job)
+    @worker.unregister_worker
+    assert_equal 1, Resque::Stat["dirty_exits"]
+    assert_equal 1, Resque::Stat["dirty_exits:jobs"]
+  end
+
+  it "does not count a worker exception on exit as a dirty exit" do
+    job = Resque::Job.new(:jobs, {'class' => 'GoodJob', 'args' => "blah"})
+    @worker.working_on(job)
+    @worker.unregister_worker(StandardError.new)
+    assert_equal 0, Resque::Stat["dirty_exits"]
+  end
+
   it "does not mask exception when timeout getting job metadata" do
     job = Resque::Job.new(:jobs, {'class' => 'GoodJob', 'args' => "blah"})
     @worker.working_on(job)
@@ -570,6 +585,23 @@ describe "Resque::Worker" do
     assert_equal 0, @worker.processed
     assert_equal 0, @worker.failed
     assert_equal 0, @worker.vetoed
+  end
+
+  it "accumulates duration stats for performed jobs only" do
+    Resque::Job.create(:jobs, VetoedJob)
+    Resque::Job.create(:jobs, BadJob)
+
+    # SomeJob (from the before block) performs; VetoedJob is vetoed and
+    # BadJob fails — neither of the latter should count
+    3.times do
+      job = @worker.reserve
+      @worker.process job
+    end
+
+    assert_equal 1, Resque::Stat["duration_count:jobs"]
+    assert_equal 1, Resque::Stat["duration_count:jobs:SomeJob"]
+    assert_operator Resque::Stat["duration_ms:jobs"], :>=, 0
+    assert_equal 1, Resque::Stat["duration_bucket:jobs:lt1s"]
   end
 
   it "knows when it started" do

@@ -268,7 +268,15 @@ module Resque
   #
   # Returns nothing
   def push(queue, item)
-    data_store.push_to_queue(queue,encode(item))
+    result = data_store.push_to_queue(queue,encode(item))
+
+    # Production-rate counters to pair with `processed` (the consumption
+    # rate); depth is a gauge and can't tell you flow. Requeues (failed
+    # retry, workers-lock bounces) count too — they are load on the queue.
+    Stat << "enqueued"
+    Stat << "enqueued:#{queue}"
+
+    result
   end
 
   # Pops a job off a queue. Queue name should be a string.
