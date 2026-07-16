@@ -599,9 +599,13 @@ describe "Resque::Worker" do
     end
 
     assert_equal 1, Resque::Stat["duration_count:jobs"]
-    assert_equal 1, Resque::Stat["duration_count:jobs:SomeJob"]
+    assert_equal 1, Resque::Stat["duration_count:class:SomeJob:jobs"]
     assert_operator Resque::Stat["duration_ms:jobs"], :>=, 0
     assert_equal 1, Resque::Stat["duration_bucket:jobs:lt1s"]
+
+    hostname = @worker.hostname
+    assert_equal 1, Resque::Stat["duration_count:host:#{hostname}:jobs"]
+    assert_operator Resque::Stat["duration_ms:host:#{hostname}:jobs"], :>=, 0
   end
 
   it "knows when it started" do

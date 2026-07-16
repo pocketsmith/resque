@@ -763,10 +763,22 @@ module Resque
     def duration!(queue_name:, job_class:, elapsed_ms:)
       elapsed_ms = elapsed_ms.round
 
+      # Per-queue rollup, plus drill-down dimensions sharing the shape
+      # duration_*:<dimension>:<value>:<queue> — a literal dimension marker
+      # so key shapes stay distinguishable. The class dimension attributes
+      # slowness to a job class; the host dimension makes a degraded host
+      # show as its durations diverging from peers running the same queues.
+      # NOTE for consumers: class names can contain "::", so parse these by
+      # anchoring the known prefix and the trailing queue name, not by
+      # splitting on colons.
       Stat.incr("duration_ms:#{queue_name}", elapsed_ms)
-      Stat.incr("duration_ms:#{queue_name}:#{job_class}", elapsed_ms)
       Stat << "duration_count:#{queue_name}"
-      Stat << "duration_count:#{queue_name}:#{job_class}"
+
+      Stat.incr("duration_ms:class:#{job_class}:#{queue_name}", elapsed_ms)
+      Stat << "duration_count:class:#{job_class}:#{queue_name}"
+
+      Stat.incr("duration_ms:host:#{hostname}:#{queue_name}", elapsed_ms)
+      Stat << "duration_count:host:#{hostname}:#{queue_name}"
 
       bucket = DURATION_BUCKETS.find { |ceiling, _| elapsed_ms < ceiling }
       Stat << "duration_bucket:#{queue_name}:#{bucket ? bucket[1] : 'ge600s'}"
