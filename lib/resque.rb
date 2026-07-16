@@ -11,6 +11,7 @@ require 'resque/failure/base'
 
 require 'resque/helpers'
 require 'resque/stat'
+require 'resque/latency'
 require 'resque/logging'
 require 'resque/log_formatters/quiet_formatter'
 require 'resque/log_formatters/verbose_formatter'
@@ -268,13 +269,16 @@ module Resque
   #
   # Returns nothing
   def push(queue, item)
-    result = data_store.push_to_queue(queue,encode(item))
+    payload = encode(item)
+    result = data_store.push_to_queue(queue, payload)
 
     # Production-rate counters to pair with `processed` (the consumption
     # rate); depth is a gauge and can't tell you flow. Requeues (failed
     # retry, workers-lock bounces) count too — they are load on the queue.
     Stat << "enqueued"
     Stat << "enqueued:#{queue}"
+
+    Latency.track(queue, payload)
 
     result
   end
@@ -283,7 +287,10 @@ module Resque
   #
   # Returns a Ruby object.
   def pop(queue)
-    decode(data_store.pop_from_queue(queue))
+    payload = data_store.pop_from_queue(queue)
+    Latency.record(queue, payload) if payload
+
+    decode(payload)
   end
 
   # Returns an integer representing the size of a queue.
@@ -327,6 +334,7 @@ module Resque
 
   # Given a queue name, completely deletes the queue.
   def remove_queue(queue)
+    Latency.sweep_queue(queue)
     data_store.remove_queue(queue)
   end
 

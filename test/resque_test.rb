@@ -250,7 +250,11 @@ describe "Resque" do
       # ignore the heartbeat key that gets set in a background thread
       keys = Resque.keys - ['workers:heartbeat']
 
-      expected = ["queue:people", "queues", "stat:enqueued", "stat:enqueued:people"]
+      latency_keys = %w( chris bob mark ).map do |name|
+        "#{Resque::Latency::KEY_PREFIX}:people:#{Digest::MD5.hexdigest(Resque.encode('name' => name))}"
+      end
+
+      expected = ["queue:people", "queues", "stat:enqueued", "stat:enqueued:people"] + latency_keys
       assert_equal expected.sort, keys.sort
     end
 

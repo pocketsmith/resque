@@ -128,10 +128,15 @@ module Resque
         data_store.everything_in_queue(queue).each do |string|
           if decode(string)['class'] == klass
             destroyed += data_store.remove_from_queue(queue,string).to_i
+            # destroy removes every entry matching this payload, so the
+            # whole companion latency list is orphaned — drop it
+            Resque::Latency.forget(queue, string)
           end
         end
       else
-        destroyed += data_store.remove_from_queue(queue, encode(:class => klass, :args => args))
+        payload = encode(:class => klass, :args => args)
+        destroyed += data_store.remove_from_queue(queue, payload)
+        Resque::Latency.forget(queue, payload)
       end
 
       destroyed
