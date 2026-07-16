@@ -537,10 +537,39 @@ describe "Resque::Worker" do
     assert_equal 2, @worker.failed
   end
 
+  class ::VetoedJob
+    def self.before_perform_veto(*)
+      raise Resque::Job::DontPerform
+    end
+
+    def self.perform(*)
+    end
+  end
+
+  it "keeps track of how many jobs were vetoed by before_perform hooks" do
+    Resque::Job.create(:jobs, VetoedJob)
+
+    # The before block enqueued SomeJob, so this processes one performed
+    # job and one vetoed job
+    2.times do
+      job = @worker.reserve
+      @worker.process job
+    end
+
+    assert_equal 1, @worker.vetoed
+    assert_equal 1, Resque::Stat["vetoed"]
+    assert_equal 1, Resque::Stat["vetoed:jobs"]
+
+    # A veto still counts towards processed; the vetoed stat is what makes
+    # declined work distinguishable from performed work
+    assert_equal 2, @worker.processed
+  end
+
   it "stats are erased when the worker goes away" do
     @worker.work(0)
     assert_equal 0, @worker.processed
     assert_equal 0, @worker.failed
+    assert_equal 0, @worker.vetoed
   end
 
   it "knows when it started" do

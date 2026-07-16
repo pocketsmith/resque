@@ -302,11 +302,18 @@ module Resque
           reconnect
           run_hook :after_fork, job
         end
-        job.perform
+        job_was_performed = job.perform
       rescue Object => e
         report_failed_job(job,e)
       else
-        log_with_severity :info, "done: #{job.inspect}"
+        # Job#perform returns false only when a before_perform hook vetoed
+        # execution by raising Resque::Job::DontPerform.
+        if job_was_performed == false
+          vetoed!(queue_name: job.queue)
+          log_with_severity :info, "vetoed: #{job.inspect}"
+        else
+          log_with_severity :info, "done: #{job.inspect}"
+        end
       ensure
         yield job if block_given?
       end
@@ -676,6 +683,7 @@ module Resque
       data_store.unregister_worker(self) do
         Stat.clear("processed:#{self}")
         Stat.clear("failed:#{self}")
+        Stat.clear("vetoed:#{self}")
       end
     rescue Exception => exception_while_unregistering
       message = exception_while_unregistering.message
@@ -727,6 +735,24 @@ module Resque
     # How many failed jobs has this worker seen? Returns an int.
     def failed
       Stat["failed:#{self}"]
+    end
+
+    # How many jobs has this worker had vetoed? Returns an int.
+    def vetoed
+      Stat["vetoed:#{self}"]
+    end
+
+    # Tells Redis a before_perform hook vetoed a job (DontPerform).
+    # Note the job still counts towards `processed` — a veto is a plugin
+    # declining work (e.g. a worker lock bounce), not work happening; this
+    # counter is what makes the two distinguishable.
+    def vetoed!(queue_name: nil)
+      queue_name = @queues.join(",") unless queue_name
+      Stat << "vetoed"
+      Stat << "vetoed:#{hostname}"
+      Stat << "vetoed:#{hostname}:#{queue_name}"
+      Stat << "vetoed:#{queue_name}"
+      Stat << "vetoed:#{self}"
     end
 
     # Tells Redis we've failed a job.
