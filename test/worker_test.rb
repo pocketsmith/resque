@@ -1116,10 +1116,18 @@ describe "Resque::Worker" do
   it "logs errors with the correct logging level" do
     messages = StringIO.new
     Resque.logger = Logger.new(messages)
-    @worker.report_failed_job(BadJobWithSyntaxError, SyntaxError)
+
+    # A real Job instance, as production always passes (the old version
+    # passed the class itself, which has no #queue and errored the test)
+    job = Resque::Job.new(:jobs, {'class' => 'BadJobWithSyntaxError', 'args' => []})
+    @worker.report_failed_job(job, SyntaxError.new("failing job"))
 
     assert_equal 0, messages.string.scan(/INFO/).count
-    assert_equal 2, messages.string.scan(/ERROR/).count
+    assert_equal 1, messages.string.scan(/ERROR/).count
+
+    # And the failure must actually reach the failure backend
+    assert_equal 1, Resque::Failure.count
+    assert_equal 1, Resque::Stat["failed:jobs"]
   end
 
   it "logs info with the correct logging level" do

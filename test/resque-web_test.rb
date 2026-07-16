@@ -5,6 +5,11 @@ require 'resque/server'
 describe "Resque web" do
   include Rack::Test::Methods
 
+  # Sinatra 4+ enables Rack::Protection::HostAuthorization by default in
+  # its development environment (the default), which 403s Rack::Test's
+  # example.org host before any route is reached
+  Resque::Server.set :environment, :test
+
   def app
     Resque::Server.new
   end

@@ -261,6 +261,8 @@ def without_forking
 end
 
 def with_pidfile
+  require 'tempfile'
+
   old_pidfile = ENV["PIDFILE"]
   begin
     file = Tempfile.new("pidfile")
